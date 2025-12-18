@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Your custom styles */
+.sidebar {
+  width: 260px;
+  transition: all 0.3s ease;
+}
+
+.main-content {
+  margin-left: 260px;
+  transition: all 0.3s ease;
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    transform: translateX(-100%);
+    position: fixed;
+    z-index: 50;
+    height: 100vh;
+  }
+  .sidebar.active {
+    transform: translateX(0);
+  }
+  .main-content {
+    margin-left: 0;
+  }
+}
+
+.nav-item:hover {
+  background-color: #4B5563;
+}
+
+.nav-item.active {
+  background-color: #374151;
+  border-left: 4px solid #3B82F6;
+}

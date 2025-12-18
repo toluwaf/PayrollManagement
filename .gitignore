@@ -1,0 +1,8 @@
+.DS_Store
+.DS_Store
+/payroll-frontend/node_modules
+/payroll-frontend/package-lock.json
+/payroll-frontend/.env
+/payroll-backend/node_modules
+/payroll-backend/package-lock.json
+/payroll-backend/.env
