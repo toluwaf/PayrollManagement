@@ -7,25 +7,46 @@ import { useSettings } from '../../../context/SettingsContext';
 import PAYECalculatorForm from './PAYECalculatorForm';
 import PAYEResultsPanel from './PAYEResultsPanel';
 import AnnualBreakdownModal from './AnnualBreakdownModal';
+import CycleProjectionPanel from './CycleProjectionPanel';
 
-const PAYECalculatorModal = ({ isOpen, onClose, defaultSalary = 0 }) => {
+const PAYECalculatorModal = ({ isOpen, onClose, defaultSalary = 0 }, defaultCycle = 'monthly') => {
   const [calculator, setCalculator] = useState(null);
   const [formData, setFormData] = useState({
-    basicSalary: defaultSalary * 0.6,
-    housingAllowance: 0,
-    transportAllowance: 0,
-    entertainmentAllowance: 0,
-    mealSubsidy: 0,
-    medicalAllowance: 0,
-    benefitsInKind: 0,
+    // Cycle selection
+    payrollCycle: defaultCycle,
+    periodWorked: 12, // For annual projection
+    
+    // Salary input (user inputs in selected cycle)
+    salaryAmount: defaultSalary,
+    
+    // Breakdown percentages (optional)
+    basicPercentage: 60,
+    housingPercentage: 25,
+    transportPercentage: 10,
+    otherPercentage: 5,
+    
+    // Deductions
     annualRentPaid: 0,
     nhisContribution: 0,
     lifeAssurance: 0,
     gratuities: 0,
-    employeeCount: 1
+    employeeCount: 1,
+    
+    // Optional direct component override
+    useDirectComponents: false,
+    directComponents: {
+      basic: 0,
+      housing: 0,
+      transport: 0,
+      entertainment: 0,
+      mealSubsidy: 0,
+      medical: 0,
+      benefitsInKind: 0
+    }
   });
 
   const [calculations, setCalculations] = useState(null);
+  const [projectedAnnual, setProjectedAnnual] = useState(null);
   const [showAnnualBreakdown, setShowAnnualBreakdown] = useState(false);
   const [activeTab, setActiveTab] = useState('input');
   const [loading, setLoading] = useState(false);
@@ -51,20 +72,108 @@ const PAYECalculatorModal = ({ isOpen, onClose, defaultSalary = 0 }) => {
     }
   }, [formData, calculator, isOpen]);
 
+  
+  // Convert between cycles
+  const cycleConverters = {
+    monthly: {
+      toAnnual: (amount) => amount * 12,
+      toMonthly: (amount) => amount,
+      toWeekly: (amount) => amount / 4.33,
+      fromAnnual: (amount) => amount / 12,
+      fromWeekly: (amount) => amount * 4.33
+    },
+    annual: {
+      toAnnual: (amount) => amount,
+      toMonthly: (amount) => amount / 12,
+      toWeekly: (amount) => (amount / 12) / 4.33,
+      fromMonthly: (amount) => amount * 12,
+      fromWeekly: (amount) => (amount * 4.33) * 12
+    },
+    weekly: {
+      toAnnual: (amount) => (amount * 4.33) * 12,
+      toMonthly: (amount) => amount * 4.33,
+      toWeekly: (amount) => amount,
+      fromAnnual: (amount) => (amount / 12) / 4.33,
+      fromMonthly: (amount) => amount / 4.33
+    }
+  };
+
+  // Calculate salary components based on input method
+  const getSalaryComponents = () => {
+    const currentAmount = parseFloat(formData.salaryAmount) || 0;
+    const converter = cycleConverters[formData.payrollCycle];
+    const monthlyAmount = converter.toMonthly(currentAmount);
+    
+    if (formData.useDirectComponents) {
+      // Use direct component values (convert to monthly if needed)
+      return {
+        basic: parseFloat(formData.directComponents.basic) || 0,
+        housing: parseFloat(formData.directComponents.housing) || 0,
+        transport: parseFloat(formData.directComponents.transport) || 0,
+        entertainment: parseFloat(formData.directComponents.entertainment) || 0,
+        mealSubsidy: parseFloat(formData.directComponents.mealSubsidy) || 0,
+        medical: parseFloat(formData.directComponents.medical) || 0,
+        benefitsInKind: parseFloat(formData.directComponents.benefitsInKind) || 0
+      };
+    } else {
+      // Calculate components based on percentages
+      const totalMonthly = monthlyAmount;
+      return {
+        basic: totalMonthly * (formData.basicPercentage / 100),
+        housing: totalMonthly * (formData.housingPercentage / 100),
+        transport: totalMonthly * (formData.transportPercentage / 100),
+        entertainment: totalMonthly * ((formData.otherPercentage * 0.4) / 100), // 40% of "other"
+        mealSubsidy: totalMonthly * ((formData.otherPercentage * 0.3) / 100), // 30% of "other"
+        medical: totalMonthly * ((formData.otherPercentage * 0.2) / 100), // 20% of "other"
+        benefitsInKind: totalMonthly * ((formData.otherPercentage * 0.1) / 100) // 10% of "other"
+      };
+    }
+  };
+  
+  // Calculate YTD (Year-to-Date) based on period worked
+  const calculateYTDProjection = (annualResult, periodWorked, cycle) => {
+    let monthsWorked;
+    
+    switch(cycle) {
+      case 'monthly':
+        monthsWorked = Math.min(periodWorked, 12);
+        break;
+      case 'annual':
+        // If annual cycle, periodWorked is in months of the annual salary
+        monthsWorked = Math.min(periodWorked, 12);
+        break;
+      case 'weekly':
+        // Convert weeks to months (approx 4.33 weeks per month)
+        monthsWorked = Math.min(periodWorked / 4.33, 12);
+        break;
+      default:
+        monthsWorked = 12;
+    }
+    
+    const fractionOfYear = monthsWorked / 12;
+    
+    return {
+      monthsWorked: monthsWorked,
+      weeksWorked: cycle === 'weekly' ? periodWorked : Math.round(monthsWorked * 4.33),
+      ytdGross: annualResult.annualGrossEmolument * fractionOfYear,
+      ytdTax: annualResult.taxCalculation.annualTax * fractionOfYear,
+      ytdNet: (annualResult.annualGrossEmolument - annualResult.taxCalculation.annualTax) * fractionOfYear,
+      remainingMonths: 12 - monthsWorked,
+      projectedAnnual: {
+        gross: annualResult.annualGrossEmolument,
+        tax: annualResult.taxCalculation.annualTax,
+        net: annualResult.annualGrossEmolument - annualResult.taxCalculation.annualTax
+      },
+      completionPercentage: (monthsWorked / 12) * 100
+    };
+  };
+
   const calculatePAYE = async () => {
     if (!calculator) return;
 
     setLoading(true);
     try {
-      const salaryComponents = {
-        basic: parseFloat(formData.basicSalary) || 0,
-        housing: parseFloat(formData.housingAllowance) || 0,
-        transport: parseFloat(formData.transportAllowance) || 0,
-        entertainment: parseFloat(formData.entertainmentAllowance) || 0,
-        mealSubsidy: parseFloat(formData.mealSubsidy) || 0,
-        medical: parseFloat(formData.medicalAllowance) || 0,
-        benefitsInKind: parseFloat(formData.benefitsInKind) || 0
-      };
+      const salaryComponents = getSalaryComponents();
 
       const additionalDeductions = {
         nhis: parseFloat(formData.nhisContribution) || 0,
@@ -78,11 +187,21 @@ const PAYECalculatorModal = ({ isOpen, onClose, defaultSalary = 0 }) => {
         employeeId: "CALC-001",
         salaryComponents,
         annualRentPaid: parseFloat(formData.annualRentPaid) || 0,
-        additionalDeductions
+        additionalDeductions,
+        monthsWorked: 12
       };
 
       const result = calculator.computePAYE(employee);
       setCalculations(result);
+            
+      // Calculate YTD projection
+      const projection = calculateYTDProjection(
+        result, 
+        formData.periodWorked, 
+        formData.payrollCycle
+      );
+      setProjectedAnnual(projection);
+
     } catch (error) {
       console.error('PAYE calculation error:', error);
     } finally {
@@ -97,11 +216,81 @@ const PAYECalculatorModal = ({ isOpen, onClose, defaultSalary = 0 }) => {
     }));
   };
 
+  const handleComponentChange = (field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      directComponents: {
+        ...prev.directComponents,
+        [field]: value
+      }
+    }));
+  };
+  
+  const handleCycleChange = (cycle) => {
+    const currentAmount = parseFloat(formData.salaryAmount) || 0;
+    const currentCycle = formData.payrollCycle;
+    
+    if (currentAmount > 0) {
+      // Convert amount to new cycle
+      const converter = cycleConverters[currentCycle];
+      let annualAmount;
+      
+      switch(currentCycle) {
+        case 'monthly':
+          annualAmount = converter.toAnnual(currentAmount);
+          break;
+        case 'annual':
+          annualAmount = currentAmount;
+          break;
+        case 'weekly':
+          annualAmount = converter.toAnnual(currentAmount);
+          break;
+      }
+      
+      // Convert from annual to new cycle
+      const newConverter = cycleConverters[cycle];
+      let newAmount;
+      
+      switch(cycle) {
+        case 'monthly':
+          newAmount = newConverter.fromAnnual(annualAmount);
+          break;
+        case 'annual':
+          newAmount = annualAmount;
+          break;
+        case 'weekly':
+          newAmount = newConverter.fromAnnual(annualAmount);
+          break;
+      }
+      
+      setFormData(prev => ({
+        ...prev,
+        payrollCycle: cycle,
+        salaryAmount: Math.round(newAmount)
+      }));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        payrollCycle: cycle
+      }));
+    }
+  };
+
   const formatCurrency = (amount) => {
     return `₦${(amount || 0).toLocaleString(undefined, { 
       minimumFractionDigits: 2, 
       maximumFractionDigits: 2 
     })}`;
+  };
+
+  
+  const getCurrentCycleLabel = () => {
+    const cycles = {
+      monthly: 'Monthly',
+      annual: 'Annual',
+      weekly: 'Weekly'
+    };
+    return cycles[formData.payrollCycle] || 'Monthly';
   };
 
   const getTotalGross = () => {
@@ -114,19 +303,44 @@ const PAYECalculatorModal = ({ isOpen, onClose, defaultSalary = 0 }) => {
   };
 
   const resetForm = () => {
+    // setFormData({
+    //   basicSalary: 0,
+    //   housingAllowance: 0,
+    //   transportAllowance: 0,
+    //   entertainmentAllowance: 0,
+    //   mealSubsidy: 0,
+    //   medicalAllowance: 0,
+    //   benefitsInKind: 0,
+    //   annualRentPaid: 0,
+    //   nhisContribution: 0,
+    //   lifeAssurance: 0,
+    //   gratuities: 0,
+    //   employeeCount: 1
+    // });
+
     setFormData({
-      basicSalary: 0,
-      housingAllowance: 0,
-      transportAllowance: 0,
-      entertainmentAllowance: 0,
-      mealSubsidy: 0,
-      medicalAllowance: 0,
-      benefitsInKind: 0,
+      payrollCycle: 'monthly',
+      periodWorked: 12,
+      salaryAmount: 0,
+      basicPercentage: 60,
+      housingPercentage: 25,
+      transportPercentage: 10,
+      otherPercentage: 5,
       annualRentPaid: 0,
       nhisContribution: 0,
       lifeAssurance: 0,
       gratuities: 0,
-      employeeCount: 1
+      employeeCount: 1,
+      useDirectComponents: false,
+      directComponents: {
+        basic: 0,
+        housing: 0,
+        transport: 0,
+        entertainment: 0,
+        mealSubsidy: 0,
+        medical: 0,
+        benefitsInKind: 0
+      }
     });
   };
 
@@ -136,6 +350,27 @@ const PAYECalculatorModal = ({ isOpen, onClose, defaultSalary = 0 }) => {
     if (settingsError) return 'Using default settings';
     if (payeSettings) return `Tax Year ${payeSettings.taxYear} • NTA Compliant`;
     return 'Using default settings';
+  };
+
+  const getSampleSalaries = () => {
+    const samples = {
+      monthly: [
+        { label: '₦100k/mo', value: 100000 },
+        { label: '₦500k/mo', value: 500000 },
+        { label: '₦1M/mo', value: 1000000 }
+      ],
+      annual: [
+        { label: '₦1.2M/yr', value: 1200000 },
+        { label: '₦6M/yr', value: 6000000 },
+        { label: '₦12M/yr', value: 12000000 }
+      ],
+      weekly: [
+        { label: '₦25k/wk', value: 25000 },
+        { label: '₦100k/wk', value: 100000 },
+        { label: '₦250k/wk', value: 250000 }
+      ]
+    };
+    return samples[formData.payrollCycle] || samples.monthly;
   };
 
   if (!isOpen) return null;
@@ -192,49 +427,91 @@ const PAYECalculatorModal = ({ isOpen, onClose, defaultSalary = 0 }) => {
               </div>
             </div>
 
+            {/* Cycle Selector */}
+            <div className="mb-6">
+              <div className="flex border border-gray-300 rounded-lg overflow-hidden">
+                {['monthly', 'annual', 'weekly'].map((cycle) => (
+                  <button
+                    key={cycle}
+                    onClick={() => handleCycleChange(cycle)}
+                    className={`flex-1 py-3 px-4 text-sm font-medium transition-colors ${
+                      formData.payrollCycle === cycle
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    {cycle === 'monthly' && 'Monthly'}
+                    {cycle === 'annual' && 'Annual'}
+                    {cycle === 'weekly' && 'Weekly'}
+                  </button>
+                ))}
+              </div>
+              <div className="flex justify-between mt-2 text-xs text-gray-500">
+                <span>Input salary as {getCurrentCycleLabel().toLowerCase()} amount</span>
+                {formData.payrollCycle === 'weekly' && (
+                  <span>× 4.33 = monthly, × 52 = annual</span>
+                )}
+              </div>
+            </div>
+
+            {/* Quick Sample Salaries */}
+            <div className="mb-6">
+              <p className="text-sm font-medium text-gray-700 mb-2">Quick Samples:</p>
+              <div className="flex flex-wrap gap-2">
+                {getSampleSalaries().map((sample, index) => (
+                  <button
+                    key={index}
+                    onClick={() => handleInputChange('salaryAmount', sample.value)}
+                    className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                  >
+                    {sample.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Current Settings Info */}
             {payeSettings && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                <h3 className="font-semibold text-blue-900 mb-2">Current Tax Settings</h3>
+                <h3 className="font-semibold text-blue-900 mb-2">NTA 2026 Tax Structure</h3>
                 <div className="text-sm text-blue-800 space-y-1">
-                  <div>• First ₦{payeSettings.taxBrackets?.[0]?.max?.toLocaleString() || '800,000'} tax-free</div>
-                  <div>• {payeSettings.taxBrackets?.length || 6} tax brackets</div>
-                  <div>• Rent relief: {(payeSettings.reliefs?.rentRelief * 100) || 20}% up to ₦{(payeSettings.reliefs?.rentReliefCap || 500000).toLocaleString()}</div>
-                  <div>• Pension: {(payeSettings.statutoryRates?.employeePension * 100) || 8}% employee</div>
+                  <div>• First ₦800,000: 0%</div>
+                  <div>• Next ₦2,200,000: 15%</div>
+                  <div>• Next ₦9,000,000: 18%</div>
+                  <div>• Next ₦13,000,000: 21%</div>
+                  <div>• Next ₦25,000,000: 23%</div>
+                  <div>• Above ₦50,000,000: 25%</div>
                 </div>
               </div>
             )}
 
             {/* Navigation Tabs */}
             <div className="flex border-b border-gray-200 mb-6">
-              <button
-                onClick={() => setActiveTab('input')}
-                className={`py-3 px-4 font-medium text-sm border-b-2 transition-colors ${
-                  activeTab === 'input'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                Salary Input
-              </button>
-              <button
-                onClick={() => setActiveTab('deductions')}
-                className={`py-3 px-4 font-medium text-sm border-b-2 transition-colors ${
-                  activeTab === 'deductions'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                Deductions
-              </button>
+              {['input', 'breakdown', 'deductions'].map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`py-3 px-4 font-medium text-sm border-b-2 transition-colors ${
+                    activeTab === tab
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {tab === 'input' && 'Salary Input'}
+                  {tab === 'breakdown' && 'Components'}
+                  {tab === 'deductions' && 'Deductions'}
+                </button>
+              ))}
             </div>
 
             <PAYECalculatorForm
               activeTab={activeTab}
               formData={formData}
               onInputChange={handleInputChange}
-              getTotalGross={getTotalGross}
+              onComponentChange={handleComponentChange}
+              onCycleChange={handleCycleChange}
               formatCurrency={formatCurrency}
+              cycleConverters={cycleConverters}
             />
           </div>
         </div>
@@ -257,12 +534,23 @@ const PAYECalculatorModal = ({ isOpen, onClose, defaultSalary = 0 }) => {
                 </p>
               </div>
             ) : (
-              <PAYEResultsPanel 
-                calculations={calculations} 
-                payeSettings={payeSettings}
-                onShowAnnualBreakdown={() => setShowAnnualBreakdown(true)}
-                formatCurrency={formatCurrency}
-              />
+              <>
+                <PAYEResultsPanel 
+                  calculations={calculations} 
+                  payeSettings={payeSettings}
+                  onShowAnnualBreakdown={() => setShowAnnualBreakdown(true)}
+                  formatCurrency={formatCurrency}
+                />
+                                
+                {projectedAnnual && (
+                  <CycleProjectionPanel
+                    projection={projectedAnnual}
+                    formData={formData}
+                    calculations={calculations}
+                    formatCurrency={formatCurrency}
+                  />
+                )}
+              </>
             )}
           </div>
         </div>
@@ -272,6 +560,7 @@ const PAYECalculatorModal = ({ isOpen, onClose, defaultSalary = 0 }) => {
       {showAnnualBreakdown && calculations && (
         <AnnualBreakdownModal
           calculations={calculations}
+          projection={projectedAnnual}
           onClose={() => setShowAnnualBreakdown(false)}
         />
       )}

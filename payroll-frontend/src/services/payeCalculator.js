@@ -2,7 +2,6 @@
 /**
  * Enhanced PAYE Calculator with debugging and validation
  */
-
 class PAYECalculator {
   constructor(settings = null, debug = false) {
     if (settings) {
@@ -31,11 +30,11 @@ class PAYECalculator {
     return {
       taxBrackets: [
         { min: 0, max: 800000, rate: 0.00, description: 'Tax Free Threshold' },
-        { min: 800001, max: 3000000, rate: 0.15, description: 'First Bracket' },
-        { min: 3000001, max: 12000000, rate: 0.18, description: 'Second Bracket' },
-        { min: 12000001, max: 25000000, rate: 0.21, description: 'Third Bracket' },
-        { min: 25000001, max: 50000000, rate: 0.23, description: 'Fourth Bracket' },
-        { min: 50000001, max: Infinity, rate: 0.25, description: 'Top Bracket' }
+        { min: 800000, max: 3000000, rate: 0.15, description: 'Next ₦2,200,000 (15%)' },
+        { min: 3000000, max: 12000000, rate: 0.18, description: 'Next ₦9,000,000 (18%)' },
+        { min: 12000000, max: 25000000, rate: 0.21, description: 'Next ₦13,000,000 (21%)' },
+        { min: 25000000, max: 50000000, rate: 0.23, description: 'Next ₦25,000,000 (23%)' },
+        { min: 50000000, max: Infinity, rate: 0.25, description: 'Above ₦50,000,000 (25%)' }
       ],
       statutoryRates: {
         employeePension: 0.08,
@@ -185,83 +184,314 @@ class PAYECalculator {
   }
 
   // Enhanced tax calculation with detailed breakdown
+  // calculateAnnualTax(taxableIncome) {
+  //   console.log(taxableIncome)
+
+  //   let remainingIncome = taxableIncome;
+  //   let totalTax = 0;
+  //   const taxBreakdown = [];
+  //   const bracketCalculations = [];
+
+  //   // Sort brackets by min to ensure proper order
+  //   const sortedBrackets = [...this.taxBrackets].sort((a, b) => a.min - b.min);
+ 
+  //   // Track how much income has been taxed so far
+  //   let incomeTaxedSoFar = 0;
+    
+  //   for (let i = 0; i < sortedBrackets.length; i++) {
+  //     const bracket = sortedBrackets[i];
+      
+  //     // If we've already taxed all income, stop
+  //     if (incomeTaxedSoFar >= taxableIncome) break;
+      
+  //     // Calculate the amount of income in this bracket
+  //     let amountInBracket;
+      
+  //     if (bracket.max === Infinity) {
+  //       // Last bracket - all remaining income
+  //       amountInBracket = taxableIncome - incomeTaxedSoFar;
+  //     } else {
+  //       // Regular bracket
+  //       const bracketWidth = bracket.max - bracket.min;
+  //       const incomeRemaining = taxableIncome - incomeTaxedSoFar;
+        
+  //       amountInBracket = Math.min(bracketWidth, incomeRemaining);
+  //     }
+      
+  //     // Ensure amount is non-negative
+  //     amountInBracket = Math.max(0, amountInBracket);
+      
+  //     const taxForThisBracket = amountInBracket * bracket.rate;
+  //     totalTax += taxForThisBracket;
+
+  //     bracketCalculations.push({
+  //       bracket: `${bracket.min.toLocaleString()} - ${bracket.max === Infinity ? '∞' : bracket.max.toLocaleString()}`,
+  //       rate: bracket.rate,
+  //       taxableAmount: amountInBracket,
+  //       tax: taxForThisBracket,
+  //       description: bracket.description,
+  //       cumulativeTax: totalTax
+  //     });
+
+  //     taxBreakdown.push({
+  //       band: `₦${bracket.min.toLocaleString()} - ₦${bracket.max === Infinity ? '∞' : bracket.max.toLocaleString()}`,
+  //       rate: `${(bracket.rate * 100).toFixed(1)}%`,
+  //       taxableAmount: amountInBracket,
+  //       tax: taxForThisBracket,
+  //       cumulativeIncome: bracket.min + amountInBracket,
+  //       description: bracket.description || ''
+  //     });
+
+  //     // Update income taxed so far
+  //     incomeTaxedSoFar += amountInBracket;
+  //   }
+
+      
+  //   // Round to 2 decimal places (kobo)
+  //   totalTax = Math.round(totalTax * 100) / 100;
+
+  //   this.log('calculateAnnualTax', {
+  //     taxableIncome,
+  //     totalTax,
+  //     bracketCalculations,
+  //     remainingIncomeAfterTax: taxableIncome - totalTax,
+  //     effectiveRate: (totalTax / taxableIncome) * 100
+  //   });
+
+  //   return { totalTax, taxBreakdown, bracketCalculations };
+  // }
+
+    // CORRECTED Progressive Tax Calculation
   calculateAnnualTax(taxableIncome) {
-    let remainingIncome = taxableIncome;
+    console.log('Calculating tax for taxable income:', taxableIncome);
+
+    if (taxableIncome <= 0) {
+      return {
+        totalTax: 0,
+        taxBreakdown: [],
+        bracketCalculations: []
+      };
+    }
+
+    // CORRECTED: Proper bracket thresholds based on Nigerian tax act
+    // First ₦800,000: 0% tax
+    // Next ₦2.2M: 15% (₦800,001 - ₦3,000,000)
+    // Next ₦9M: 18% (₦3,000,001 - ₦12,000,000)
+    // Next ₦13M: 21% (₦12,000,001 - ₦25,000,000)
+    // Next ₦25M: 23% (₦25,000,001 - ₦50,000,000)
+    // Above ₦50M: 25% (₦50,000,001 and above)
+    
+    const brackets = [
+      { min: 0, max: 800000, rate: 0.00, description: 'Tax Free Threshold' },
+      { min: 800000, max: 3000000, rate: 0.15, description: 'Next ₦2,200,000 (15%)' },
+      { min: 3000000, max: 12000000, rate: 0.18, description: 'Next ₦9,000,000 (18%)' },
+      { min: 12000000, max: 25000000, rate: 0.21, description: 'Next ₦13,000,000 (21%)' },
+      { min: 25000000, max: 50000000, rate: 0.23, description: 'Next ₦25,000,000 (23%)' },
+      { min: 50000000, max: Infinity, rate: 0.25, description: 'Above ₦50,000,000 (25%)' }
+    ];
+
     let totalTax = 0;
     const taxBreakdown = [];
-    const bracketCalculations = [];
+    let incomeRemaining = taxableIncome;
 
-    // Sort brackets by min to ensure proper order
-    const sortedBrackets = [...this.taxBrackets].sort((a, b) => a.min - b.min);
-
-    for (const bracket of sortedBrackets) {
-      if (remainingIncome <= 0) break;
-
-      const bracketRange = bracket.max === Infinity 
-        ? Infinity 
-        : bracket.max - bracket.min + 1;
+    for (let i = 0; i < brackets.length && incomeRemaining > 0; i++) {
+      const bracket = brackets[i];
       
-      let taxableInBracket = 0;
+      // Calculate the portion of income in this bracket
+      let taxableInBracket;
       
-      if (remainingIncome > bracket.max && bracket.max !== Infinity) {
-        taxableInBracket = bracketRange;
+      if (taxableIncome <= bracket.min) {
+        // Income is below this bracket's minimum, skip it
+        continue;
+      } else if (taxableIncome <= bracket.max) {
+        // Income falls within this bracket
+        taxableInBracket = taxableIncome - bracket.min;
       } else {
-        taxableInBracket = Math.max(0, remainingIncome - bracket.min + 1);
-        if (taxableInBracket > bracketRange && bracket.max !== Infinity) {
-          taxableInBracket = bracketRange;
-        }
+        // Income exceeds this bracket's maximum
+        taxableInBracket = bracket.max - bracket.min;
       }
-
-      if (taxableInBracket > 0) {
-        const taxInBracket = taxableInBracket * bracket.rate;
-        totalTax += taxInBracket;
-
-        bracketCalculations.push({
-          bracket: `${bracket.min.toLocaleString()} - ${bracket.max === Infinity ? '∞' : bracket.max.toLocaleString()}`,
-          rate: bracket.rate,
-          taxableAmount: taxableInBracket,
-          tax: taxInBracket,
-          description: bracket.description
-        });
-
-        taxBreakdown.push({
-          band: `₦${bracket.min.toLocaleString()} - ₦${bracket.max === Infinity ? '∞' : bracket.max.toLocaleString()}`,
-          rate: `${(bracket.rate * 100).toFixed(1)}%`,
-          taxableAmount: taxableInBracket,
-          tax: taxInBracket,
-          description: bracket.description || ''
-        });
+      
+      // Only tax the portion that's actually in this bracket
+      // but limited to remaining income
+      taxableInBracket = Math.min(taxableInBracket, incomeRemaining);
+      
+      if (taxableInBracket <= 0) {
+        continue;
       }
+      
+      const taxForBracket = taxableInBracket * bracket.rate;
+      totalTax += taxForBracket;
+      incomeRemaining -= taxableInBracket;
+      
+      taxBreakdown.push({
+        band: `₦${bracket.min.toLocaleString()} - ₦${bracket.max === Infinity ? '∞' : bracket.max.toLocaleString()}`,
+        rate: `${(bracket.rate * 100).toFixed(0)}%`,
+        taxableAmount: taxableInBracket,
+        tax: taxForBracket,
+        cumulativeTax: totalTax,
+        description: bracket.description
+      });
 
-      remainingIncome -= taxableInBracket;
-      if (remainingIncome <= 0) break;
+      // If we've taxed all income, break out
+      if (incomeRemaining <= 0) {
+        break;
+      }
     }
+
+
+    totalTax = Math.round(totalTax * 100) / 100
 
     this.log('calculateAnnualTax', {
       taxableIncome,
       totalTax,
-      bracketCalculations,
-      remainingIncomeAfterTax: taxableIncome - totalTax
+      taxBreakdown,
+      effectiveRate: taxableIncome > 0 ? (totalTax / taxableIncome) * 100 : 0,
+      roundingMethod: 'nearest whole number (Math.round)'
     });
 
-    return { totalTax, taxBreakdown, bracketCalculations };
+    return {
+      totalTax,
+      taxBreakdown,
+      bracketCalculations: taxBreakdown
+    };
   }
 
+
+  // Add this method to your PAYECalculator class
+  calculateForCycle(salaryComponents, cycle, periodWorked = 12) {
+    // Convert to monthly for standard calculation
+    let monthlyComponents = { ...salaryComponents };
+    
+    if (cycle === 'annual') {
+      // Convert annual to monthly
+      Object.keys(monthlyComponents).forEach(key => {
+        monthlyComponents[key] = monthlyComponents[key] / 12;
+      });
+    } else if (cycle === 'weekly') {
+      // Convert weekly to monthly (approx 4.33 weeks per month)
+      Object.keys(monthlyComponents).forEach(key => {
+        monthlyComponents[key] = monthlyComponents[key] * 4.33;
+      });
+    }
+    
+    // Calculate as usual
+    const result = this.computePAYE({
+      salaryComponents: monthlyComponents,
+      monthsWorked: periodWorked
+    });
+    
+    // Add cycle-specific adjustments
+    result.originalCycle = cycle;
+    result.periodWorked = periodWorked;
+    
+    if (cycle === 'weekly') {
+      result.weekly = {
+        gross: salaryComponents.basic + (salaryComponents.housing || 0) + (salaryComponents.transport || 0),
+        tax: result.taxCalculation.monthlyTax / 4.33,
+        net: result.netPay / 4.33
+      };
+    }
+    
+    return result;
+  }
+
+  // Add this method to calculate YTD projections
+  calculateYTDProjection(fullYearResult, monthsWorked) {
+    const fraction = monthsWorked / 12;
+    
+    return {
+      monthsWorked,
+      fractionOfYear: fraction,
+      ytdGross: fullYearResult.annualGrossEmolument * fraction,
+      ytdTax: fullYearResult.taxCalculation.annualTax * fraction,
+      ytdNet: (fullYearResult.annualGrossEmolument - fullYearResult.taxCalculation.annualTax) * fraction,
+      remainingMonths: 12 - monthsWorked,
+      projectedRemainingGross: fullYearResult.annualGrossEmolument * (1 - fraction),
+      projectedRemainingTax: fullYearResult.taxCalculation.annualTax * (1 - fraction),
+      completionPercentage: (monthsWorked / 12) * 100
+    };
+  }
+
+  // Add these validation methods
+  validateCycleInput(cycle, amount, periodWorked) {
+    const errors = [];
+    
+    if (!['monthly', 'annual', 'weekly'].includes(cycle)) {
+      errors.push('Cycle must be monthly, annual, or weekly');
+    }
+    
+    if (typeof amount !== 'number' || amount < 0) {
+      errors.push('Amount must be a non-negative number');
+    }
+    
+    if (cycle === 'monthly' && (periodWorked < 1 || periodWorked > 12)) {
+      errors.push('Months worked must be between 1 and 12');
+    }
+    
+    if (cycle === 'weekly' && (periodWorked < 1 || periodWorked > 52)) {
+      errors.push('Weeks worked must be between 1 and 52');
+    }
+    
+    if (cycle === 'annual' && (periodWorked < 1 || periodWorked > 12)) {
+      errors.push('For annual cycle, period worked (months) must be between 1 and 12');
+    }
+    
+    return errors;
+  }
+
+  static convertAmount(amount, fromCycle, toCycle) {
+    const conversions = {
+      monthly: {
+        annual: (val) => val * 12,
+        weekly: (val) => val / 4.33
+      },
+      annual: {
+        monthly: (val) => val / 12,
+        weekly: (val) => (val / 12) / 4.33
+      },
+      weekly: {
+        monthly: (val) => val * 4.33,
+        annual: (val) => (val * 4.33) * 12
+      }
+    };
+    
+    if (fromCycle === toCycle) return amount;
+    if (conversions[fromCycle] && conversions[fromCycle][toCycle]) {
+      return conversions[fromCycle][toCycle](amount);
+    }
+    
+    // Default: convert to monthly first
+    let monthly;
+    switch(fromCycle) {
+      case 'annual': monthly = amount / 12; break;
+      case 'weekly': monthly = amount * 4.33; break;
+      default: monthly = amount;
+    }
+    
+    switch(toCycle) {
+      case 'annual': return monthly * 12;
+      case 'weekly': return monthly / 4.33;
+      default: return monthly;
+    }
+  }
   // Complete computation with detailed logging
   computePAYE(employee, options = {}) {
     this.calculationLog = []; // Reset log
-    
+    console.log(employee)
     const {
       salaryComponents,
       monthsWorked = 12,
       annualRentPaid = 0,
       additionalDeductions = {},
-      payrollCycle = 'monthly'
+      payrollCycle = 'monthly',
+      periodWorked = monthsWorked,
+      ytdMode = false
     } = employee;
 
     try {
       // Step 1: Calculate Gross Emolument
       const grossEmolument = this.calculateGrossEmolument(salaryComponents);
+  
       const annualGrossEmolument = grossEmolument * 12;
 
       this.log('step1_gross', {
@@ -295,8 +525,11 @@ class PAYECalculator {
       const annualLifeAssurance = (deductions.lifeAssurance || 0) * 12;
       const annualGratuities = (deductions.gratuities || 0) * 12;
 
+ 
       // Step 5: Calculate taxable income
       const totalAnnualDeductions = rentRelief + annualPension + annualNHF + annualNHIS;
+      console.log('ag',annualGrossEmolument)
+      console.log('ad',totalAnnualDeductions)
       const annualTaxableIncome = Math.max(0, annualGrossEmolument - totalAnnualDeductions);
 
       this.log('step3_taxableIncome', {
@@ -313,8 +546,10 @@ class PAYECalculator {
         annualTaxableIncome
       });
 
+      console.log(annualTaxableIncome)
       // Step 6: Calculate annual tax
       const annualTaxCalculation = this.calculateAnnualTax(annualTaxableIncome);
+      
       const annualTax = annualTaxCalculation.totalTax;
 
       // Step 7: Calculate monthly values
@@ -366,7 +601,14 @@ class PAYECalculator {
 
       this.log('final_result', result);
 
+      if (ytdMode && periodWorked < 12) {
+        result.ytdProjection = this.calculateYTDProjection(result, periodWorked);
+        result.isYTDCalculation = true;
+        result.periodWorked = periodWorked;
+      }
+
       return result;
+
 
     } catch (error) {
       console.error('Error in computePAYE:', error);

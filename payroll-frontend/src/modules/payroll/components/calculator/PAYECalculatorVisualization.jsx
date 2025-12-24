@@ -1,7 +1,7 @@
 // src/components/payroll/PAYECalculatorVisualization.jsx
 import React, { useState, useEffect } from 'react';
 import PAYECalculator from '../../../../services/payeCalculator';
-import { generateTestCases, runTestSuite, generateTestReport } from '../../../../utils/payeTestGenerator'
+import { generateTestCases, runTestSuite, generateTestReport, runCategoryTests } from '../../../../utils/payeTestGenerator'
 
 const PAYECalculatorVisualization = ({ settings = null }) => {
   const [calculator, setCalculator] = useState(null);
@@ -22,7 +22,9 @@ const PAYECalculatorVisualization = ({ settings = null }) => {
     nhis: 0,
     lifeAssurance: 0,
     gratuities: 0,
-    employeeCount: 1
+    employeeCount: 1,
+    payrollCycle: 'monthly',
+    periodWorked: 12
   });
 
   // Initialize calculator
@@ -46,9 +48,12 @@ const PAYECalculatorVisualization = ({ settings = null }) => {
     
     try {
       const result = calculator.computePAYE({
-        salaryComponents: testCase.employee,
+        salaryComponents: testCase.employee?.salaryComponents || testCase.employee,
+        annualRentPaid: testCase.employee?.annualRentPaid || 0,
         additionalDeductions: testCase.additionalDeductions || {},
-        adjustments: testCase.adjustments || {}
+        payrollCycle: testCase.payrollCycle || 'monthly',
+        periodWorked: testCase.periodWorked || 12,
+        ytdMode: testCase.periodWorked < 12 || (testCase.payrollCycle === 'weekly' && testCase.periodWorked < 52)
       });
       
       setCalculationResult(result);
@@ -84,13 +89,19 @@ const PAYECalculatorVisualization = ({ settings = null }) => {
       const result = calculator.computePAYE({
         salaryComponents,
         annualRentPaid: parseFloat(customInput.annualRentPaid) || 0,
-        additionalDeductions
+        additionalDeductions,
+        payrollCycle: customInput.payrollCycle,
+        periodWorked: parseInt(customInput.periodWorked) || 12,
+        ytdMode: (customInput.payrollCycle === 'monthly' && customInput.periodWorked < 12) || 
+                 (customInput.payrollCycle === 'weekly' && customInput.periodWorked < 52)
       });
       
       setCalculationResult(result);
       setSelectedTestCase({
         description: 'Custom Calculation',
-        employee: salaryComponents
+        employee: salaryComponents,
+        payrollCycle: customInput.payrollCycle,
+        periodWorked: customInput.periodWorked
       });
       setActiveTab('calculation-details');
     } catch (error) {
@@ -130,7 +141,27 @@ const PAYECalculatorVisualization = ({ settings = null }) => {
     return `${value.toFixed(2)}%`;
   };
 
-  console.log('cr',calculationResult)
+  // Get test case count by category
+  const getTestCaseCounts = () => {
+    const testCases = generateTestCases();
+    return Object.entries(testCases).map(([category, cases]) => ({
+      category,
+      count: cases.length,
+      icon: getCategoryIcon(category)
+    }));
+  };
+
+  const getCategoryIcon = (category) => {
+    const icons = {
+      cycleBased: '🔄',
+      ytdProjections: '📊',
+      edgeCases: '⚠️',
+      deductionScenarios: '💰',
+      conversionTests: '⚖️'
+    };
+    return icons[category] || '📋';
+  };
+
   if (!calculator) {
     return (
       <div className="p-6">
@@ -145,6 +176,16 @@ const PAYECalculatorVisualization = ({ settings = null }) => {
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-gray-900">PAYE Calculator Testing & Visualization</h2>
         <p className="text-gray-600">Validate tax calculations against NTA 2026 standards</p>
+        {settings && (
+          <div className="mt-2 flex items-center space-x-2">
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+              Tax Year {settings.taxYear || 2026}
+            </span>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+              {calculator.taxBrackets?.length || 6} Tax Brackets
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Controls */}
@@ -196,12 +237,13 @@ const PAYECalculatorVisualization = ({ settings = null }) => {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`py-2 px-1 border-b-2 text-sm font-medium ${
+              className={`py-2 px-1 border-b-2 text-sm font-medium flex items-center ${
                 activeTab === tab.id
                   ? 'border-blue-500 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
+              <span className="mr-2">{tab.icon}</span>
               {tab.label}
             </button>
           ))}
@@ -213,12 +255,27 @@ const PAYECalculatorVisualization = ({ settings = null }) => {
         {/* Test Cases Tab */}
         {activeTab === 'test-cases' && (
           <div>
+            <div className="mb-6 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+              {getTestCaseCounts().map(({ category, count, icon }) => (
+                <div key={category} className="border border-gray-200 rounded-lg p-3 text-center">
+                  <div className="text-lg mb-1">{icon}</div>
+                  <div className="text-xs font-medium text-gray-700 capitalize">
+                    {category.replace(/([A-Z])/g, ' $1')}
+                  </div>
+                  <div className="text-xs text-gray-500">{count} tests</div>
+                </div>
+              ))}
+            </div>
+
             <h3 className="text-lg font-semibold mb-4">Predefined Test Cases</h3>
             {Object.entries(generateTestCases()).map(([category, cases]) => (
               <div key={category} className="mb-6">
-                <h4 className="font-medium text-gray-700 mb-3 capitalize">
-                  {category.replace(/([A-Z])/g, ' $1')} ({cases.length} tests)
-                </h4>
+                <div className="flex items-center mb-3">
+                  <span className="text-lg mr-2">{getCategoryIcon(category)}</span>
+                  <h4 className="font-medium text-gray-700 capitalize">
+                    {category.replace(/([A-Z])/g, ' $1')} ({cases.length} tests)
+                  </h4>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {cases.map(testCase => (
                     <div
@@ -228,20 +285,28 @@ const PAYECalculatorVisualization = ({ settings = null }) => {
                     >
                       <div className="flex justify-between items-start mb-2">
                         <h5 className="font-medium text-gray-900">{testCase.id}</h5>
-                        <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                          {testCase.employee.basic ? formatCurrency(testCase.employee.basic) : 'No Basic'}
-                        </span>
+                        <div className="flex items-center space-x-1">
+                          <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                            {testCase.payrollCycle || 'monthly'}
+                          </span>
+                          <span className="text-xs bg-gray-100 text-gray-800 px-2 py-1 rounded">
+                            {testCase.periodWorked || 12} periods
+                          </span>
+                        </div>
                       </div>
                       <p className="text-sm text-gray-600 mb-3">{testCase.description}</p>
                       <div className="text-xs text-gray-500 space-y-1">
-                        {testCase.employee.basic && (
+                        {testCase.employee?.salaryComponents?.basic && (
+                          <div>Basic: {formatCurrency(testCase.employee.salaryComponents.basic)}</div>
+                        )}
+                        {testCase.employee?.basic && (
                           <div>Basic: {formatCurrency(testCase.employee.basic)}</div>
                         )}
-                        {testCase.employee.housing && (
-                          <div>Housing: {formatCurrency(testCase.employee.housing)}</div>
-                        )}
-                        {testCase.expected.annualTax !== undefined && (
+                        {testCase.expected?.annualTax !== undefined && (
                           <div>Expected Tax: {formatCurrency(testCase.expected.annualTax)} annual</div>
+                        )}
+                        {testCase.expected?.ytdGross !== undefined && (
+                          <div>YTD Gross: {formatCurrency(testCase.expected.ytdGross)}</div>
                         )}
                       </div>
                     </div>
@@ -259,7 +324,49 @@ const PAYECalculatorVisualization = ({ settings = null }) => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {/* Salary Components */}
               <div className="space-y-4">
-                <h4 className="font-medium text-gray-700 border-b pb-2">Salary Components (Monthly)</h4>
+                <h4 className="font-medium text-gray-700 border-b pb-2">Cycle & Period</h4>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Payroll Cycle
+                  </label>
+                  <select
+                    value={customInput.payrollCycle}
+                    onChange={(e) => setCustomInput(prev => ({
+                      ...prev,
+                      payrollCycle: e.target.value
+                    }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                  >
+                    <option value="monthly">Monthly</option>
+                    <option value="annual">Annual</option>
+                    <option value="weekly">Weekly</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Periods Worked
+                  </label>
+                  <input
+                    type="number"
+                    value={customInput.periodWorked}
+                    onChange={(e) => setCustomInput(prev => ({
+                      ...prev,
+                      periodWorked: e.target.value
+                    }))}
+                    min="1"
+                    max={customInput.payrollCycle === 'weekly' ? 52 : 12}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {customInput.payrollCycle === 'weekly' ? 'Weeks' : 'Months'} worked this year
+                  </p>
+                </div>
+
+                <h4 className="font-medium text-gray-700 border-b pb-2 pt-4">
+                  Salary Components ({customInput.payrollCycle})
+                </h4>
                 {[
                   { key: 'basic', label: 'Basic Salary', placeholder: 'e.g., 300000' },
                   { key: 'housing', label: 'Housing Allowance', placeholder: 'e.g., 75000' },
@@ -312,7 +419,7 @@ const PAYECalculatorVisualization = ({ settings = null }) => {
                       min="0"
                     />
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">For rent relief calculation</p>
+                  <p className="text-xs text-gray-500 mt-1">20% relief up to ₦500,000 annually</p>
                 </div>
 
                 <div>
@@ -368,24 +475,12 @@ const PAYECalculatorVisualization = ({ settings = null }) => {
                 <h4 className="font-medium text-gray-700 border-b pb-2">Calculation Preview</h4>
                 <div className="bg-gray-50 p-4 rounded-lg space-y-3">
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Monthly Gross:</span>
-                    <span className="font-medium">
-                      {formatCurrency(
-                        Object.entries(customInput)
-                          .filter(([key]) => ['basic', 'housing', 'transport', 'medical', 'entertainment', 'mealSubsidy', 'benefitsInKind'].includes(key))
-                          .reduce((sum, [_, value]) => sum + (parseFloat(value) || 0), 0)
-                      )}
-                    </span>
+                    <span className="text-gray-600">Payroll Cycle:</span>
+                    <span className="font-medium capitalize">{customInput.payrollCycle}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Annual Gross:</span>
-                    <span className="font-medium">
-                      {formatCurrency(
-                        Object.entries(customInput)
-                          .filter(([key]) => ['basic', 'housing', 'transport', 'medical', 'entertainment', 'mealSubsidy', 'benefitsInKind'].includes(key))
-                          .reduce((sum, [_, value]) => sum + (parseFloat(value) || 0), 0) * 12
-                      )}
-                    </span>
+                    <span className="text-gray-600">Periods Worked:</span>
+                    <span className="font-medium">{customInput.periodWorked} {customInput.payrollCycle === 'weekly' ? 'weeks' : 'months'}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Rent Relief:</span>
@@ -409,26 +504,37 @@ const PAYECalculatorVisualization = ({ settings = null }) => {
                 </div>
 
                 <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                  <h5 className="font-medium text-blue-900 mb-2">Current Tax Brackets</h5>
-                  <div className="text-sm text-blue-800 space-y-1">
-                    {calculator.taxBrackets.map((bracket, index) => (
-                      <div key={index} className="flex justify-between">
-                        <span>₦{bracket.min.toLocaleString()} - {bracket.max === Infinity ? '∞' : `₦${bracket.max.toLocaleString()}`}:</span>
-                        <span>{(bracket.rate * 100).toFixed(1)}%</span>
+                  <h5 className="font-medium text-blue-900 mb-2">Current Tax Settings</h5>
+                  <div className="text-sm text-blue-800 space-y-2">
+                    <div>
+                      <div className="font-semibold">Tax Brackets:</div>
+                      {calculator.taxBrackets.map((bracket, index) => (
+                        <div key={index} className="flex justify-between ml-2">
+                          <span>₦{bracket.min.toLocaleString()} - {bracket.max === Infinity ? '∞' : `₦${bracket.max.toLocaleString()}`}:</span>
+                          <span>{(bracket.rate * 100).toFixed(1)}%</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div>
+                      <div className="font-semibold">Statutory Rates:</div>
+                      <div className="ml-2">
+                        <div>Pension: {formatPercentage(calculator.rates.employeePension * 100)} employee, {formatPercentage(calculator.rates.employerPension * 100)} employer</div>
+                        <div>NHF: {formatPercentage(calculator.rates.nhf * 100)}</div>
+                        <div>NHIS: {formatPercentage(calculator.rates.nhis * 100)}</div>
                       </div>
-                    ))}
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
         )}
-
+ 
         {/* Test Results Tab */}
         {activeTab === 'test-results' && testResults && (
           <div>
             <div className="mb-6 bg-gray-50 p-4 rounded-lg">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <div className="text-center">
                   <div className="text-3xl font-bold text-gray-900">{testResults.summary.total}</div>
                   <div className="text-sm text-gray-600">Total Tests</div>
@@ -445,24 +551,61 @@ const PAYECalculatorVisualization = ({ settings = null }) => {
                   <div className="text-3xl font-bold text-blue-600">{testResults.summary.successRate.toFixed(1)}%</div>
                   <div className="text-sm text-gray-600">Success Rate</div>
                 </div>
+                <div className="text-center">
+                  <div className="text-3xl font-bold text-purple-600">{testResults.calculatorVersion || '2.0.0'}</div>
+                  <div className="text-sm text-gray-600">Version</div>
+                </div>
               </div>
+              
+              {/* Category Success Rates */}
+              {testResults.summary.categories && (
+                <div className="mt-4">
+                  <h4 className="font-medium text-gray-700 mb-2">Category Performance</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                    {Object.entries(testResults.summary.categories).map(([category, stats]) => (
+                      <div key={category} className="text-center p-2 bg-white rounded border">
+                        <div className="text-xs text-gray-600 mb-1 capitalize">
+                          {category.replace(/([A-Z])/g, ' $1')}
+                        </div>
+                        <div className={`text-sm font-bold ${
+                          stats.successRate >= 95 ? 'text-green-600' :
+                          stats.successRate >= 80 ? 'text-yellow-600' :
+                          'text-red-600'
+                        }`}>
+                          {stats.successRate.toFixed(1)}%
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {stats.passed}/{stats.total}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {Object.entries(testResults.details).map(([category, tests]) => (
               <div key={category} className="mb-6">
-                <h4 className="font-medium text-gray-700 mb-3 capitalize">
-                  {category.replace(/([A-Z])/g, ' $1')}
-                </h4>
+                <div className="flex items-center mb-3">
+                  <span className="text-lg mr-2">{getCategoryIcon(category)}</span>
+                  <h4 className="font-medium text-gray-700 capitalize">
+                    {category.replace(/([A-Z])/g, ' $1')}
+                  </h4>
+                  <span className="ml-2 text-xs bg-gray-100 text-gray-800 px-2 py-1 rounded">
+                    {tests.filter(t => t.passed).length}/{tests.length} passed
+                  </span>
+                </div>
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                       <tr>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Test ID</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cycle</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Basic Salary</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Annual Tax</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Discrepancies</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Expected Tax</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Calculated Tax</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Difference</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
@@ -470,6 +613,14 @@ const PAYECalculatorVisualization = ({ settings = null }) => {
                         <tr key={test.id} className="hover:bg-gray-50">
                           <td className="px-4 py-3 text-sm font-medium text-gray-900">{test.id}</td>
                           <td className="px-4 py-3 text-sm text-gray-600 max-w-xs">{test.description}</td>
+                          <td className="px-4 py-3 text-sm text-gray-900">
+                            <div className="flex flex-col">
+                              <span>{test.payrollCycle || 'monthly'}</span>
+                              <span className="text-xs text-gray-500">
+                                {test.periodWorked || 12} periods
+                              </span>
+                            </div>
+                          </td>
                           <td className="px-4 py-3">
                             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                               test.passed 
@@ -480,7 +631,10 @@ const PAYECalculatorVisualization = ({ settings = null }) => {
                             </span>
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-900">
-                            {test.employee?.basic ? formatCurrency(test.employee.basic) : 'N/A'}
+                            {test.expected?.annualTax 
+                              ? formatCurrency(test.expected.annualTax)
+                              : 'N/A'
+                            }
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-900">
                             {test.calculated?.taxCalculation?.annualTax 
@@ -489,19 +643,11 @@ const PAYECalculatorVisualization = ({ settings = null }) => {
                             }
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-600">
-                            {test.discrepancies?.length > 0 ? (
-                              <div className="space-y-1">
-                                {test.discrepancies.map((d, idx) => (
-                                  <div key={idx} className="text-xs">
-                                    {d.field}: expected {formatCurrency(d.expected)}, got {formatCurrency(d.actual)}
-                                  </div>
-                                ))}
-                              </div>
-                            ) : test.error ? (
-                              <span className="text-red-600 text-xs">{test.error}</span>
-                            ) : (
-                              <span className="text-green-600 text-xs">None</span>
-                            )}
+                            {test.expected?.annualTax && test.calculated?.taxCalculation?.annualTax ? (
+                              <span className={Math.abs(test.expected.annualTax - test.calculated.taxCalculation.annualTax) > 100 ? 'text-red-600' : 'text-green-600'}>
+                                {formatCurrency(Math.abs(test.expected.annualTax - test.calculated.taxCalculation.annualTax))}
+                              </span>
+                            ) : 'N/A'}
                           </td>
                         </tr>
                       ))}
@@ -520,6 +666,20 @@ const PAYECalculatorVisualization = ({ settings = null }) => {
               <div>
                 <h3 className="text-lg font-semibold mb-2">Calculation Details</h3>
                 <p className="text-gray-600">{selectedTestCase?.description || 'Custom Calculation'}</p>
+
+                <div className="mt-2 flex items-center space-x-2">
+                  <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                    {calculationResult.payrollCycle || selectedTestCase?.payrollCycle || 'monthly'} cycle
+                  </span>
+                  {calculationResult.isYTDCalculation && (
+                    <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">
+                      YTD Calculation
+                    </span>
+                  )}
+                  <span className="text-xs bg-gray-100 text-gray-800 px-2 py-1 rounded">
+                    {calculationResult.monthsWorked || selectedTestCase?.periodWorked || 12} periods
+                  </span>
+                </div>
               </div>
               <div className="text-right">
                 <div className="text-sm text-gray-500">Calculated on</div>
@@ -528,6 +688,71 @@ const PAYECalculatorVisualization = ({ settings = null }) => {
                 </div>
               </div>
             </div>
+
+            {/* YTD Projection Section */}
+            {calculationResult.ytdProjection && (
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h4 className="font-semibold text-gray-900">Year-to-Date Projection</h4>
+                    <p className="text-sm text-gray-600">
+                      {calculationResult.ytdProjection.monthsWorked.toFixed(1)} of 12 months completed
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-blue-600">
+                      {calculationResult.ytdProjection.completionPercentage.toFixed(1)}%
+                    </div>
+                    <div className="text-sm text-gray-600">Year completed</div>
+                  </div>
+                </div>
+                
+                <div className="w-full bg-gray-200 rounded-full h-2.5 mb-6">
+                  <div 
+                    className="bg-blue-600 h-2.5 rounded-full transition-all duration-500"
+                    style={{ width: `${calculationResult.ytdProjection.completionPercentage}%` }}
+                  />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="bg-white p-4 rounded-lg border">
+                    <h5 className="font-medium text-gray-700 mb-3">Year-to-Date</h5>
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Gross Income:</span>
+                        <span className="font-semibold">{formatCurrency(calculationResult.ytdProjection.ytdGross)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Tax Paid:</span>
+                        <span className="font-semibold text-red-600">{formatCurrency(calculationResult.ytdProjection.ytdTax)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Net Income:</span>
+                        <span className="font-semibold text-green-600">{formatCurrency(calculationResult.ytdProjection.ytdNet)}</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-white p-4 rounded-lg border">
+                    <h5 className="font-medium text-gray-700 mb-3">Projected Full Year</h5>
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Annual Gross:</span>
+                        <span className="font-semibold">{formatCurrency(calculationResult.ytdProjection.projectedAnnual.gross)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Annual Tax:</span>
+                        <span className="font-semibold text-red-600">{formatCurrency(calculationResult.ytdProjection.projectedAnnual.tax)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Annual Net:</span>
+                        <span className="font-semibold text-green-600">{formatCurrency(calculationResult.ytdProjection.projectedAnnual.net)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

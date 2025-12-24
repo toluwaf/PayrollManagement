@@ -6,8 +6,9 @@ import ReliefsAnalysis from './AnnualBreakdownComponents/ReliefsAnalysis';
 import TaxBandVisualization from './AnnualBreakdownComponents/TaxBandVisualization';
 import AnnualDeductions from './AnnualBreakdownComponents/AnnualDeductions';
 import TaxEfficiencyAnalysis from './AnnualBreakdownComponents/TaxEfficiencyAnalysis';
+import YTDProjectionSection from './AnnualBreakdownComponents/YTDProjectionSection';
 
-const AnnualBreakdownModal = ({ calculations, onClose }) => {
+const AnnualBreakdownModal = ({ calculations, projection, onClose }) => {
   const formatCurrency = (amount) => {
     return `₦${(amount || 0).toLocaleString(undefined, { 
       minimumFractionDigits: 2, 
@@ -53,6 +54,9 @@ const AnnualBreakdownModal = ({ calculations, onClose }) => {
           
           {/* 6. Tax Efficiency Analysis */}
           <TaxEfficiencyAnalysis calculations={calculations} formatCurrency={formatCurrency} />
+
+          {/* 7. Year-to-Date predictions */}
+         {projection && <YTDProjectionSection projection={projection} formatCurrency={formatCurrency} />}
         </div>
 
         <div className="flex justify-between items-center p-6 border-t border-gray-200 bg-gray-50">

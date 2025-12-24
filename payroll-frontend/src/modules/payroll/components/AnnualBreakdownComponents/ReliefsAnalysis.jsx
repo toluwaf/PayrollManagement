@@ -3,7 +3,7 @@ import React from 'react';
 const ReliefsAnalysis = ({ calculations, formatCurrency }) => {
   const { deductions, taxCalculation } = calculations;
   const annualGross = calculations.annualGrossEmolument;
-  console.log('d', deductions)
+  
   const reliefs = [
     {
       name: 'Rent Relief',

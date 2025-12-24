@@ -365,11 +365,11 @@ export const payrollService = {
       taxYear: 2026,
       taxBrackets: [
         { min: 0, max: 800000, rate: 0.00, description: 'Tax Free Threshold' },
-        { min: 800001, max: 3000000, rate: 0.15, description: 'First Bracket' },
-        { min: 3000001, max: 12000000, rate: 0.18, description: 'Second Bracket' },
-        { min: 12000001, max: 25000000, rate: 0.21, description: 'Third Bracket' },
-        { min: 25000001, max: 50000000, rate: 0.23, description: 'Fourth Bracket' },
-        { min: 50000001, max: Infinity, rate: 0.25, description: 'Top Bracket' }
+        { min: 800000, max: 3000000, rate: 0.15, description: 'Next ₦2,200,000 (15%)' },
+        { min: 3000000, max: 12000000, rate: 0.18, description: 'Next ₦9,000,000 (18%)' },
+        { min: 12000000, max: 25000000, rate: 0.21, description: 'Next ₦13,000,000 (21%)' },
+        { min: 25000000, max: 50000000, rate: 0.23, description: 'Next ₦25,000,000 (23%)' },
+        { min: 50000000, max: Infinity, rate: 0.25, description: 'Above ₦50,000,000 (25%)' }
       ],
       statutoryRates: {
         employeePension: 0.08,
